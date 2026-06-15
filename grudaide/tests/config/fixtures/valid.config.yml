@@ -1,0 +1,9 @@
+github:
+  appId: "12345"
+  privateKey: "test-private-key"
+  webhookSecret: "test-secret"
+
+server:
+  port: 3000
+
+workers: []

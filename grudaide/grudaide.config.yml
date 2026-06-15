@@ -1,0 +1,83 @@
+# GRUDAIDE Application Configuration
+# This file provides static configuration. Environment variables take precedence.
+# See .env.example for all available environment variables.
+
+github:
+  appId: ""            # Set via GITHUB_APP_ID
+  privateKey: ""       # Set via GITHUB_PRIVATE_KEY
+  webhookSecret: ""    # Set via GITHUB_WEBHOOK_SECRET
+
+server:
+  port: 3000
+  host: "0.0.0.0"
+  webhookPath: "/webhooks"
+  healthPath: "/health"
+
+deployment:
+  environment: "development"
+  rollbackOnFailure: true
+  buildCommand: "npm run build"
+  testCommand: "npm test"
+  startCommand: "npm start"
+  # Grudge Studio npm projects
+  projects:
+    - name: "grudaide"
+      path: "."
+    # Add additional Grudge Studio projects here:
+    # - name: "my-project"
+    #   path: "../my-project"
+    #   registry: "https://registry.npmjs.org"
+
+storage:
+  owner: "MolochDaGod"
+  repo: "GRUDAIDE"
+  issueDataLabel: "grudaide:data"
+  stateLabel: "grudaide:state"
+  dataPrefix: "grudaide/"
+
+logging:
+  level: "info"
+  format: "json"
+  enableFileLogging: false
+  logDir: "./logs"
+
+# Pre-configured workers
+# Workers can also be registered programmatically via the WorkerRegistry API.
+workers:
+  - id: "deployment-worker"
+    name: "Deployment Worker"
+    type: "deployment"
+    enabled: true
+    concurrency: 3
+    retryLimit: 2
+    retryDelay: 5000
+    timeout: 600000
+    triggers:
+      - "push"
+      - "deployment"
+
+  - id: "monitoring-worker"
+    name: "Monitoring Worker"
+    type: "monitoring"
+    enabled: true
+    concurrency: 10
+    retryLimit: 1
+    retryDelay: 2000
+    timeout: 30000
+    triggers:
+      - "issues"
+      - "pull_request"
+      - "workflow_run"
+
+  - id: "data-sync-worker"
+    name: "Data Sync Worker"
+    type: "data-sync"
+    enabled: true
+    concurrency: 5
+    retryLimit: 3
+    retryDelay: 3000
+    timeout: 60000
+    triggers:
+      - "push"
+      - "issues"
+      - "pull_request"

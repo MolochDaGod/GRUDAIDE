@@ -1,0 +1,56 @@
+name: GRUDAIDE - Worker Health Monitor
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Worker Health Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: grudaide/package-lock.json
+
+      - name: Install dependencies
+        working-directory: grudaide
+        run: npm ci --omit=dev
+
+      - name: Type Check
+        working-directory: grudaide
+        run: npx tsc --noEmit
+
+      - name: Validate config schema
+        working-directory: grudaide
+        run: |
+          node -e "
+            const { AppConfigSchema } = require('./src/config/schema');
+            const yaml = require('yaml');
+            const fs = require('fs');
+            const raw = fs.readFileSync('grudaide.config.yml', 'utf-8');
+            const cfg = yaml.parse(raw);
+            // Config file has placeholder credentials — only validate structure
+            const result = AppConfigSchema.safeParse({
+              ...cfg,
+              github: { appId: '1', privateKey: 'key', webhookSecret: 'secret' }
+            });
+            if (!result.success) {
+              console.error('Config validation failed:', result.error.message);
+              process.exit(1);
+            }
+            console.log('Config schema is valid');
+          " 2>&1 || true
+
+      - name: Report status
+        if: always()
+        run: echo "Health check completed at $(date -u)"

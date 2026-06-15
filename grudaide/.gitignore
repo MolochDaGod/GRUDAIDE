@@ -1,0 +1,11 @@
+# GRUDAIDE node_modules and build output
+node_modules/
+dist/
+coverage/
+*.log
+logs/
+
+# Environment files — never commit secrets
+.env
+.env.local
+.env.*.local
