@@ -29,6 +29,9 @@ jobs:
     name: Deploy to ${{ github.event.inputs.environment || 'staging' }}
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
+    permissions:
+      contents: read
+      deployments: write
 
     steps:
       - name: Checkout
@@ -58,6 +61,7 @@ jobs:
         run: npx tsc
 
       - name: Create GitHub deployment
+        id: create-deployment
         uses: actions/github-script@v7
         with:
           script: |
@@ -98,7 +102,7 @@ jobs:
             await github.rest.repos.createDeploymentStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              deployment_id: ${{ steps.deploy.outputs.deployment_id || '0' }},
+              deployment_id: ${{ steps['create-deployment'].outputs.deployment_id || '0' }},
               state: status,
               description: `GRUDAIDE deployment ${status}`,
             });

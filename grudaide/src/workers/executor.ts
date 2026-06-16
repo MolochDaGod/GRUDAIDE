@@ -33,6 +33,8 @@ export class WorkerExecutor {
   private readonly defaultTimeoutMs: number;
   private readonly autoRecovery: boolean;
   private readonly executions = new Map<string, ActiveExecution>();
+  /** Per-worker rolling history of task durations (last 100). */
+  private readonly durationHistory = new Map<string, number[]>();
   private dispatchInterval?: ReturnType<typeof setInterval>;
   private running = false;
 
@@ -117,14 +119,17 @@ export class WorkerExecutor {
     this.executions.set(task.id, { task, worker, startedAt: new Date(), timeoutHandle });
 
     try {
+      const execStartedAt = this.executions.get(task.id)?.startedAt;
       const result = await withTimeout(
         () => worker.execute(task),
         timeoutMs,
         `Task ${task.id}`,
       );
 
+      const durationMs = execStartedAt ? Date.now() - execStartedAt.getTime() : 0;
       clearTimeout(timeoutHandle);
       this.executions.delete(task.id);
+      this.recordDuration(workerId, durationMs);
       this.queue.complete(task.id, result);
       this.registry.setStatus(workerId, 'idle');
       this.registry.updateState(workerId, {
@@ -214,16 +219,32 @@ export class WorkerExecutor {
    */
   getWorkerMetrics(workerId: string): WorkerMetrics {
     const reg = this.registry.get(workerId);
+    const durations = this.durationHistory.get(workerId) ?? [];
+    const averageTaskDurationMs =
+      durations.length > 0
+        ? durations.reduce((sum, d) => sum + d, 0) / durations.length
+        : 0;
+
     return {
       workerId,
       tasksCompleted: reg.state.tasksCompleted,
       tasksFailed: reg.state.tasksFailed,
-      averageTaskDurationMs: 0, // TODO: track duration history
+      averageTaskDurationMs,
       uptime: reg.state.startedAt
         ? Date.now() - reg.state.startedAt.getTime()
         : 0,
       lastActivity: reg.state.lastHeartbeat ?? reg.metadata.updatedAt,
     };
+  }
+
+  private recordDuration(workerId: string, durationMs: number): void {
+    let history = this.durationHistory.get(workerId);
+    if (!history) {
+      history = [];
+      this.durationHistory.set(workerId, history);
+    }
+    history.push(durationMs);
+    if (history.length > 100) history.shift();
   }
 
   /** Register a worker instance and initialize it. */
