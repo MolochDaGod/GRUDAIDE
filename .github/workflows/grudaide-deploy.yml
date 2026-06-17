@@ -1,0 +1,108 @@
+name: GRUDAIDE Deploy Workers
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'grudaide/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+      ref:
+        description: 'Git ref to deploy'
+        required: false
+        default: ''
+
+env:
+  NODE_VERSION: '22.x'
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'staging' }}
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    permissions:
+      contents: read
+      deployments: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: grudaide/package-lock.json
+
+      - name: Install dependencies
+        working-directory: grudaide
+        run: npm ci
+
+      - name: Type-check
+        working-directory: grudaide
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        working-directory: grudaide
+        run: npm test
+
+      - name: Build
+        working-directory: grudaide
+        run: npx tsc
+
+      - name: Create GitHub deployment
+        id: create-deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: '${{ github.event.inputs.ref || github.sha }}',
+              environment: '${{ github.event.inputs.environment || 'staging' }}',
+              description: 'GRUDAIDE AI Worker Deployment',
+              auto_merge: false,
+              required_contexts: [],
+            });
+            core.setOutput('deployment_id', deployment.data.id);
+
+      - name: Deploy GRUDAIDE
+        working-directory: grudaide
+        env:
+          GITHUB_APP_ID: ${{ secrets.GRUDAIDE_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.GRUDAIDE_PRIVATE_KEY }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.GRUDAIDE_WEBHOOK_SECRET }}
+          NODE_ENV: ${{ github.event.inputs.environment || 'staging' }}
+        run: |
+          echo "Deploying GRUDAIDE workers to $NODE_ENV"
+          node dist/index.js &
+          GRUDAIDE_PID=$!
+          sleep 5
+          # Health check
+          curl --fail http://localhost:3000/health || (kill $GRUDAIDE_PID && exit 1)
+          echo "GRUDAIDE is healthy"
+          kill $GRUDAIDE_PID
+
+      - name: Update deployment status
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: ${{ steps['create-deployment'].outputs.deployment_id || '0' }},
+              state: status,
+              description: `GRUDAIDE deployment ${status}`,
+            });

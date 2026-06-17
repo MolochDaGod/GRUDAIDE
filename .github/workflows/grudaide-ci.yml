@@ -1,0 +1,83 @@
+name: GRUDAIDE CI
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'grudaide/**'
+      - '.github/workflows/grudaide-ci.yml'
+  pull_request:
+    branches: [master, main]
+    paths:
+      - 'grudaide/**'
+      - '.github/workflows/grudaide-ci.yml'
+
+jobs:
+  test:
+    name: Test & Type-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        node-version: ['20.x', '22.x']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+          cache-dependency-path: grudaide/package-lock.json
+
+      - name: Install dependencies
+        working-directory: grudaide
+        run: npm ci
+
+      - name: Type-check (src)
+        working-directory: grudaide
+        run: npx tsc --noEmit
+
+      - name: Type-check (tests)
+        working-directory: grudaide
+        run: npx tsc --project tsconfig.test.json
+
+      - name: Run tests
+        working-directory: grudaide
+        run: npm test -- --coverage
+
+      - name: Upload coverage
+        if: matrix.node-version == '22.x'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: grudaide/coverage/
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: grudaide/package-lock.json
+
+      - name: Install dependencies
+        working-directory: grudaide
+        run: npm ci
+
+      - name: Check types
+        working-directory: grudaide
+        run: npx tsc --noEmit
